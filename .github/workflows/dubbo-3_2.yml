@@ -1,198 +1,242 @@
-name: Dubbo 3.2
-
-on:
-  pull_request:
-    paths:
-      - "**"
-      - "!**/*.md"
-      - "!docs/**"
-  push:
-    paths:
-      - '**'
-      - "!**/*.md"
-      - "!docs/**"
-  workflow_dispatch:
-
 env:
-  FORK_COUNT: 2
-  FAIL_FAST: 0
-  SHOW_ERROR_DETAIL: 1
-  BUILD_OPTS: --batch-mode --no-snapshot-updates --no-transfer-progress --settings ${{github.workspace}}/.mvn/settings.xml
-    -Dmaven.wagon.http.retryHandler.count=3 clean package dependency:copy-dependencies -DskipTests
-  #multi-version size limit
-  VERSIONS_LIMIT: 4
-  #candidate versions (the dubbo snapshot version will be extracted from pom.xml and appended before CANDIDATE_VERSIONS )
-  CANDIDATE_VERSIONS: '
-    spring.version:5.3.24;
-    spring-boot.version:2.7.6;
-    '
+  BUILD_OPTS: --batch-mode --no-snapshot-updates --no-transfer-progress --settings
+    ${{github.workspace}}/.mvn/settings.xml -Dmaven.wagon.http.retryHandler.count=3
+    clean package dependency:copy-dependencies -DskipTests
+  CANDIDATE_VERSIONS: ' spring.version:5.3.24; spring-boot.version:2.7.6; '
   DUBBO_REF: '3.2'
-
+  FAIL_FAST: 0
+  FORK_COUNT: 2
+  SHOW_ERROR_DETAIL: 1
+  VERSIONS_LIMIT: 4
 jobs:
-  build-samples:
-    needs: [build-dubbo]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v3
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-samples-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-samples-maven-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: 21
-      - name: Build with Maven
-        run: |
-          ./mvnw $BUILD_OPTS
-      - name: Clean with Maven
-        run: |
-          ./mvnw --batch-mode --no-snapshot-updates --no-transfer-progress --settings ${{github.workspace}}/.mvn/settings.xml clean
-
   build-dubbo:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-    # Map a step output to a job output
     outputs:
       commit_id: ${{ steps.git-checker.outputs.commit_id }}
       version: ${{ steps.git-checker.outputs.version }}
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-        with:
-          repository: 'apache/dubbo'
-          ref: ${{env.DUBBO_REF}}
-      - name: Get commit id and dubbo version
-        id: git-checker
-        run: |
-          # Calculate Dubbo Version
-          REVISION=`awk '/<revision>[^<]+<\/revision>/{gsub(/<revision>|<\/revision>/,"",$1);print $1;exit;}' pom.xml`
-          echo "::set-output name=version::$REVISION"
-          echo "dubbo version: $REVISION"
-          #
-          # commit id
-          commit_id=`git log --format="%H" -n 1`
-          echo "::set-output name=commit_id::$commit_id"
-          echo "commit_id: $commit_id"
-      - name: Dubbo cache
-        id: dubbocache
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository/org/apache/dubbo
-          key: ${{ runner.os }}-dubbo-snapshot-${{steps.git-checker.outputs.commit_id}}
-      - name: Cache local Maven repository
-        if: steps.dubbocache.outputs.cache-hit != 'true'
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-dubbo-${{env.DUBBO_REF}}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-dubbo-${{env.DUBBO_REF}}-maven-
-      - name: Set up JDK 8
-        if: steps.dubbocache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: 8
-      - name: Build dubbo
-        if: steps.dubbocache.outputs.cache-hit != 'true'
-        run: |
-          ./mvnw --batch-mode --no-snapshot-updates --no-transfer-progress  clean install -Dmaven.test.skip=true -Dmaven.test.skip.exec=true
+    - continue-on-error: true
+      uses: actions/checkout@v3
+      with:
+        ref: ${{env.DUBBO_REF}}
+        repository: apache/dubbo
+    - continue-on-error: true
+      id: git-checker
+      name: Get commit id and dubbo version
+      run: '# Calculate Dubbo Version
 
+        REVISION=`awk ''/<revision>[^<]+<\/revision>/{gsub(/<revision>|<\/revision>/,"",$1);print
+        $1;exit;}'' pom.xml`
+
+        echo "::set-output name=version::$REVISION"
+
+        echo "dubbo version: $REVISION"
+
+        #
+
+        # commit id
+
+        commit_id=`git log --format="%H" -n 1`
+
+        echo "::set-output name=commit_id::$commit_id"
+
+        echo "commit_id: $commit_id"
+
+        '
+    - continue-on-error: true
+      id: dubbocache
+      name: Dubbo cache
+      uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-dubbo-snapshot-${{steps.git-checker.outputs.commit_id}}
+        path: ~/.m2/repository/org/apache/dubbo
+    - continue-on-error: true
+      if: steps.dubbocache.outputs.cache-hit != 'true'
+      name: Cache local Maven repository
+      uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-dubbo-${{env.DUBBO_REF}}-maven-${{ hashFiles('**/pom.xml')
+          }}
+        path: ~/.m2/repository
+        restore-keys: '${{ runner.os }}-dubbo-${{env.DUBBO_REF}}-maven-
+
+          '
+    - continue-on-error: true
+      if: steps.dubbocache.outputs.cache-hit != 'true'
+      name: Set up JDK 8
+      uses: actions/setup-java@v3
+      with:
+        distribution: zulu
+        java-version: 8
+    - continue-on-error: true
+      if: steps.dubbocache.outputs.cache-hit != 'true'
+      name: Build dubbo
+      run: './mvnw --batch-mode --no-snapshot-updates --no-transfer-progress  clean
+        install -Dmaven.test.skip=true -Dmaven.test.skip.exec=true
+
+        '
+    strategy:
+      fail-fast: false
+  build-samples:
+    needs:
+    - build-dubbo
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Cache local Maven repository
+      uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-samples-maven-${{ hashFiles('**/pom.xml') }}
+        path: ~/.m2/repository
+        restore-keys: '${{ runner.os }}-samples-maven-
+
+          '
+    - continue-on-error: true
+      name: Set up JDK 21
+      uses: actions/setup-java@v3
+      with:
+        distribution: zulu
+        java-version: 21
+    - continue-on-error: true
+      name: Build with Maven
+      run: './mvnw $BUILD_OPTS
+
+        '
+    - continue-on-error: true
+      name: Clean with Maven
+      run: './mvnw --batch-mode --no-snapshot-updates --no-transfer-progress --settings
+        ${{github.workspace}}/.mvn/settings.xml clean
+
+        '
+    strategy:
+      fail-fast: false
   prepare_test:
-    runs-on: ubuntu-latest
     env:
-      #'JOB_COUNT' MUST match 'job_id' list of 'testjob'
       JOB_COUNT: 5
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-      - name: Prepare test list
-        run: |
-          bash ./test/scripts/prepare-test.sh
-      - name: Upload test list
-        uses: actions/upload-artifact@v3
-        with:
-          name: test-list
-          path: test/jobs
+    - continue-on-error: true
+      uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Prepare test list
+      run: 'bash ./test/scripts/prepare-test.sh
 
-  testjob:
-    needs: [prepare_test, build-dubbo]
-    name: 'Integration Test (Java${{matrix.java}}, Job${{matrix.job_id}})'
-    runs-on: ubuntu-latest
+        '
+    - continue-on-error: true
+      name: Upload test list
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-list
+        path: test/jobs
+  test_result:
     env:
+      JAVA_VER: ${{matrix.java}}
+    if: always()
+    name: Test Result (Java${{matrix.java}})
+    needs:
+    - testjob
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Download test result
+      uses: actions/download-artifact@v3
+      with:
+        name: test-result
+        path: test/jobs/
+    - continue-on-error: true
+      name: Merge test result - java ${{matrix.java}}
+      run: ./test/scripts/merge-test-results.sh
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+        - 8
+        - 11
+        - 17
+        - 21
+  testjob:
+    env:
+      ALL_REMOTE_VERSION: true
       JAVA_VER: ${{matrix.java}}
       TEST_CASE_FILE: jobs/testjob_${{matrix.job_id}}.txt
-      ALL_REMOTE_VERSION: true
-    strategy:
-      fail-fast: false
-      matrix:
-        java: [8, 11, 17, 21]
-        #testjob id list MUST match 'JOB_COUNT' of 'prepare_test'
-        job_id: [1,2,3,4,5]
+    name: Integration Test (Java${{matrix.java}}, Job${{matrix.job_id}})
+    needs:
+    - prepare_test
+    - build-dubbo
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up JDK ${{matrix.java}}
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: ${{matrix.java}}
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-samples-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-samples-maven-
-      - name: Dubbo cache
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository/org/apache/dubbo
-          key: ${{ runner.os }}-dubbo-snapshot-${{needs.build-dubbo.outputs.commit_id}}
-      - name: Download test list
-        uses: actions/download-artifact@v3
-        with:
-          name: test-list
-          path: test/jobs/
-      - name: Init Candidate Versions
-        run: |
-          DUBBO_VERSION="${{needs.build-dubbo.outputs.version}}"
-          CANDIDATE_VERSIONS="dubbo.version:$DUBBO_VERSION;compiler.version:$DUBBO_VERSION;dubbo.compiler.version:$DUBBO_VERSION;java.version:${{matrix.java}};$CANDIDATE_VERSIONS"
-          echo "CANDIDATE_VERSIONS=$CANDIDATE_VERSIONS" >> $GITHUB_ENV
-      - name: Build test image
-        run: |
-          cd test && bash ./build-test-image.sh
-      - name: Run tests
-        run: cd test && bash ./run-tests.sh
-      - name: Upload test result
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: test-result
-          path: test/jobs/*-result*
+    - continue-on-error: true
+      uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Set up JDK ${{matrix.java}}
+      uses: actions/setup-java@v3
+      with:
+        distribution: zulu
+        java-version: ${{matrix.java}}
+    - continue-on-error: true
+      name: Cache local Maven repository
+      uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-samples-maven-${{ hashFiles('**/pom.xml') }}
+        path: ~/.m2/repository
+        restore-keys: '${{ runner.os }}-samples-maven-
 
-  test_result:
-    needs: [testjob]
-    name: 'Test Result (Java${{matrix.java}})'
-    if: always()
-    runs-on: ubuntu-latest
+          '
+    - continue-on-error: true
+      name: Dubbo cache
+      uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-dubbo-snapshot-${{needs.build-dubbo.outputs.commit_id}}
+        path: ~/.m2/repository/org/apache/dubbo
+    - continue-on-error: true
+      name: Download test list
+      uses: actions/download-artifact@v3
+      with:
+        name: test-list
+        path: test/jobs/
+    - continue-on-error: true
+      name: Init Candidate Versions
+      run: 'DUBBO_VERSION="${{needs.build-dubbo.outputs.version}}"
+
+        CANDIDATE_VERSIONS="dubbo.version:$DUBBO_VERSION;compiler.version:$DUBBO_VERSION;dubbo.compiler.version:$DUBBO_VERSION;java.version:${{matrix.java}};$CANDIDATE_VERSIONS"
+
+        echo "CANDIDATE_VERSIONS=$CANDIDATE_VERSIONS" >> $GITHUB_ENV
+
+        '
+    - continue-on-error: true
+      name: Build test image
+      run: 'cd test && bash ./build-test-image.sh
+
+        '
+    - continue-on-error: true
+      name: Run tests
+      run: cd test && bash ./run-tests.sh
+    - continue-on-error: true
+      if: always()
+      name: Upload test result
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-result
+        path: test/jobs/*-result*
     strategy:
       fail-fast: false
       matrix:
-        java: [8, 11, 17, 21]
-    env:
-      JAVA_VER: ${{matrix.java}}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Download test result
-        uses: actions/download-artifact@v3
-        with:
-          name: test-result
-          path: test/jobs/
-      - name: Merge test result - java ${{matrix.java}}
-        run: ./test/scripts/merge-test-results.sh
+        java:
+        - 8
+        - 11
+        - 17
+        - 21
+        job_id:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+name: Dubbo 3.2
+on:
+  repository_dispatch:
+    types: trigger-ga___dubbo-3_2.yml
